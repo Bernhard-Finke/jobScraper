@@ -3,17 +3,19 @@ from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 import csv
-
+import argparse
 from time import sleep
+from datetime import date
 
 
 class JobListing:
-    def __init__(self, job_title, company, location, link, description):
+    def __init__(self, job_title, company, location, link, description, date):
         self.job_title = job_title
         self.company = company
         self.location = location
         self.link = link
         self.description = description
+        self.date_accessed = date
 
     def __eq__(self, other):
         return self.job_title == other.job_title and self.company == other.company
@@ -22,15 +24,18 @@ class JobListing:
         return hash((self.job_title, self.company))
 
     def __str__(self):
-        return "Job: " + self.job_title + " at " + self.company + "\nLocation: " + self.location
+        return "Job: " + self.job_title + " at " + self.company + "\nLocation: " + self.location + "\nFirst accessed on: " + str(self.date_accessed)
+
+    def get_date(self):
+        return self.date_accessed
 
     def to_array(self):
-        return [self.job_title, self.company, self.location, self.link, self.description]
+        return [self.job_title, self.company, self.location, self.link, self.description, self.date_accessed]
         #pd.DataFrame({"Job Title": self.job_title, "Company": self.company, "Location": self.location,
                              #"Salary": self.salary, "Link": self.link, "Job Description": self.description}, index=[0])
 
 
-def process_job(driver, postings, current_link, site_key):
+def process_job(driver, current_link, site_key):
     driver.get(current_link)
 
     if site_key == 'Glassdoor':
@@ -54,18 +59,12 @@ def process_job(driver, postings, current_link, site_key):
     else:
         raise KeyError
 
-    current_job = JobListing(title, employer, location, current_link, job_desc)
-    print(current_job)
-    if current_job not in postings:
-        postings.append(current_job)
-    else:
-        print("Already in dataframe")
-    return postings
+    current_job = JobListing(title, employer, location, current_link, job_desc, date.today())
 
-def main():
-    area = "London, England (UK)"
-    job = "Air Traffic Controller Jobs"
+    return current_job
 
+
+def main(job, area):
     if "UK" in area:
         code = "uk"
     elif "Germany" in area:
@@ -75,13 +74,12 @@ def main():
     else:
         raise Exception
 
-
     try:
         with open('Job Postings.csv') as csv_file:
             csv_reader = csv.reader(csv_file)
             job_postings = []
             for row in csv_reader:
-                job_postings.append(JobListing(row[0], row[1], row[2], row[3], row[4]))
+                job_postings.append(JobListing(row[0], row[1], row[2], row[3], row[4], date.fromisoformat(row[5])))
     except FileNotFoundError:
         job_postings = []
 
@@ -130,7 +128,11 @@ def main():
         else:
             raise KeyError
         for link in job_links[0:1]:
-            job_postings = process_job(driver=browser, postings=job_postings, current_link=link, site_key=current_key)
+            current_job = process_job(driver=browser, current_link=link, site_key=current_key)
+            if current_job not in job_postings:
+                job_postings.append(current_job)
+            else:
+                print("Already in dataframe, added on: " + str(job_postings[job_postings.index(current_job)].get_date()))
 
     browser.close()
     print(job_postings)
@@ -139,4 +141,11 @@ def main():
         [csv_writer.writerow(row.to_array()) for row in job_postings]
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--job', help='Specify Job to Search', type=str, default='Junior Data Scientist Jobs')
+    parser.add_argument('--location', help='Specify City, Country (if in the UK then specify nation (UK)', type=str, default='London, England (UK)')
+
+    args = parser.parse_args()  
+    
+    main(args.job, args.location)
